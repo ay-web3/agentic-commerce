@@ -1,3 +1,6 @@
 node_modules
-secrets/
 .env
+secrets/
+.DS_Store
+out
+cache
