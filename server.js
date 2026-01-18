@@ -97,6 +97,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.post("/pick-product", async (req, res) => {
+  const { prompt } = req.body;
+
+  if (!prompt) return res.status(400).json({ error: "Prompt required" });
+
+  const productId = await extractProductIdFromAPI(prompt);
+
+  res.json({ productId });
+});
+
 
 app.get("/", (req, res) => {
   res.send("AI Commerce API is running");
@@ -223,75 +233,83 @@ app.get("/product", async (req, res) => {
   }
 });
 
+async function extractProductIdFromAPI(userPrompt) {
+  // 1. Fetch real products
+  const res = await fetch("https://dummyjson.com/products?limit=20");
+  const data = await res.json();
+
+  const products = data.products;
+
+  // 2. Build readable list for AI
+  const productListText = products
+    .map(p => `${p.id}: ${p.title} (${p.category})`)
+    .join("\n");
+
+  // 3. Ask Gemini to select
+  const aiPrompt = `
+You are selecting a product ID from a store catalog.
+
+Available products:
+${productListText}
+
+User request:
+"${userPrompt}"
+
+Rules:
+- Return ONLY the product ID number (1 to 20)
+- No words
+- No explanation
+- If unclear, return 1
+`;
+
+  const text = await callGemini(aiPrompt);
+
+  const id = Number(text.trim());
+
+  if (!id || id < 1 || id > 20) return 1;
+
+  return id;
+}
+
 /* =======================
    AI AGENT ENDPOINT
 ======================= */
 
 app.post("/ai-query", async (req, res) => {
-  const { prompt } = req.body;
-
-  if (!prompt) return res.status(400).json({ error: "Prompt required" });
-
   try {
-    // 1. Ask Gemini for product ID
-    const extractionText = await callGemini(`
-User request: "${prompt}"
-Return only the product ID number. If unknown return 1.
-`);
+    const { txHash, productId } = req.body;
 
-    const productId = Number(extractionText.trim()) || 1;
-
-    // 2. Pay smart contract
-    const txHash = await payForProduct(productId, prompt);
-await provider.waitForTransaction(txHash, 1);
-
-
-    // 3. Call paid product API
-    const apiResponse = await fetch(
-      `http://localhost:${PORT}/product?id=${productId}`,
-      {
-        headers: {
-          "X-Payment": JSON.stringify({
-            chain: "arc-testnet",
-            token: "USDC",
-            contract: CONTRACT_ADDRESS,
-            productId,
-            txHash,
-            amount: "1",
-          }),
-        },
-      }
-    );
-
-    const productData = await apiResponse.json();
-
-    if (!apiResponse.ok) {
-      return res.status(402).json(productData);
+    if (!txHash || !productId) {
+      return res.status(400).json({ error: "Missing txHash or productId" });
     }
 
-    // 4. Ask Gemini to analyze
-    const analysisText = await callGemini(`
+    const isValid = await verifyContractPayment(txHash, productId, "1");
+
+    if (!isValid) {
+      return res.status(402).json({ error: "Payment not verified" });
+    }
+
+    const response = await fetch(`https://dummyjson.com/products/${productId}`);
+    const productData = await response.json();
+
+    const analysis = await callGemini(`
 Analyze this product performance:
 
 ${JSON.stringify(productData, null, 2)}
 `);
 
-    // 5. Return result
-    const explorerUrl = `https://testnet.arcscan.app/tx/${txHash}`;
-
-res.json({
-  productId,
-  txHash,
-  explorerUrl,
-  analysis: analysisText,
-});
-
+    res.json({
+      productId,
+      txHash,
+      analysis
+    });
 
   } catch (err) {
     console.error("AI agent error:", err);
     res.status(500).json({ error: "AI processing failed" });
   }
 });
+
 
 
 

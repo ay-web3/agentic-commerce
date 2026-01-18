@@ -2,10 +2,11 @@ import { useState } from "react";
 import { connectWallet } from "./web3";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESS, ABI, USDC_ADDRESS, USDC_ABI } from "./contract";
+const BACKEND_URL = "https://turbo-garbanzo-96j5wvvp44527wp5-3000.app.github.dev";
 
 function App() {
   const [address, setAddress] = useState("");
-  const [productId, setProductId] = useState("");
+  const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState("");
   const [txHash, setTxHash] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,10 +17,8 @@ function App() {
   }
 
   async function buyAndAnalyze() {
-  const pid = parseInt(productId, 10);
-
-  if (!pid || pid <= 0) {
-    alert("Enter a valid product ID (e.g. 1)");
+  if (!query.trim()) {
+    alert("Enter a product description");
     return;
   }
 
@@ -33,33 +32,54 @@ function App() {
     const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
     const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
 
-    const price = await contract.productPrices(pid);
+    // 1. AI chooses product ID (via backend)
+    const pickRes = await fetch(BACKEND_URL + "/pick-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: query })
+    });
 
-    const owner = await signer.getAddress();
-    const allowance = await usdc.allowance(owner, CONTRACT_ADDRESS);
+    const pickData = await pickRes.json();
+
+if (!pickRes.ok) {
+  throw new Error(pickData.error || "Product selection failed");
+}
+
+const productId = pickData.productId;
+
+
+    // 2. Read price
+    const price = await contract.productPrices(productId);
+
+    // 3. Approve USDC
+    const allowance = await usdc.allowance(await signer.getAddress(), CONTRACT_ADDRESS);
 
     if (allowance < price) {
       const approveTx = await usdc.approve(CONTRACT_ADDRESS, price);
       await approveTx.wait();
     }
 
+    // 4. Pay contract
     const receiptId = ethers.id(Date.now().toString());
 
-    const tx = await contract.payForProduct(pid, "AI analysis request", receiptId);
-    setTxHash(tx.hash);
-
+    const tx = await contract.payForProduct(productId, query, receiptId);
     await tx.wait();
 
-    const res = await fetch("https://turbo-garbanzo-96j5wvvp44527wp5-3000.app.github.dev/ai-query", {
+    setTxHash(tx.hash);
+
+    // 5. Ask backend to verify + analyze
+    const res = await fetch(BACKEND_URL + "/ai-query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: `Tell me about product ${pid} and analyze its performance`
-      }),
+        txHash: tx.hash,
+        productId
+      })
     });
 
     const data = await res.json();
-    setAnalysis(data.analysis || JSON.stringify(data, null, 2));
+
+    setAnalysis(data.analysis);
 
   } catch (err) {
     alert(err.message);
@@ -67,7 +87,6 @@ function App() {
     setLoading(false);
   }
 }
-
 
 
   return (
@@ -81,9 +100,9 @@ function App() {
       )}
 
       <input
-        placeholder="Product ID"
-        value={productId}
-        onChange={(e) => setProductId(e.target.value)}
+  placeholder="Describe product (e.g. red lipstick, cheap perfume)"
+  value={query}
+  onChange={(e) => setQuery(e.target.value)}
         style={{ width: "100%", marginTop: 10 }}
       />
 
