@@ -1,0 +1,29 @@
+{
+  "name": "agentic-commerce",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ay-web3/agentic-commerce.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ay-web3/agentic-commerce/issues"
+  },
+  "homepage": "https://github.com/ay-web3/agentic-commerce#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.5.0",
+    "node-fetch": "^3.3.2",
+    "viem": "^2.44.4"
+  }
+}
