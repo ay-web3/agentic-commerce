@@ -33,7 +33,7 @@ contract AgentWallet {
 
     /* ========== CONFIG ========== */
 
-    function updateDailyLimit(uint256 newLimit) external onlyOwner {
+    function updateDailyLimit(uint256 newLimit) external onlyManager {
         dailyLimit = newLimit;
     }
 

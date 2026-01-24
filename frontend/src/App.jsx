@@ -1,39 +1,73 @@
-import { useState } from "react";
-import { connectWallet } from "./web3";
+import { useEffect, useState } from "react";
 import { ethers } from "ethers";
+import "./trust.css";
+
+import { searchProducts } from "./api/products";
+import { PRODUCT_MAP } from "./productMap";
+import { ensureArcNetwork } from "./network";
+
 import {
-  CONTRACT_ADDRESS,
-  ABI,
   USDC_ADDRESS,
   USDC_ABI,
   AGENT_MANAGER_ADDRESS,
-  AGENT_MANAGER_ABI
+  AGENT_MANAGER_ABI,
 } from "./contract";
 
-const BACKEND_URL = "https://turbo-garbanzo-96j5wvvp44527wp5-3000.app.github.dev";
+const API_BASE =
+  "https://super-invention-qvp46rrwg67cxjvj-3000.app.github.dev";
 
-function App() {
+function shortAddr(addr) {
+  if (!addr) return "";
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+export default function App() {
+  /* =====================
+     Wallet / Agent
+  ===================== */
   const [address, setAddress] = useState("");
-  const [query, setQuery] = useState("");
+  const [agentWallet, setAgentWallet] = useState("");
+  const [agentBalance, setAgentBalance] = useState("0");
+  const [dailyLimit, setDailyLimit] = useState("10");
+  const [fundAmount, setFundAmount] = useState("");
+
+  /* =====================
+     Product + AI
+  ===================== */
+  const [searchText, setSearchText] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+
+  const [task, setTask] = useState("Analyze profitability");
+  const [customQuery, setCustomQuery] = useState("");
+
   const [analysis, setAnalysis] = useState("");
   const [txHash, setTxHash] = useState("");
+  const [step, setStep] = useState("");
   const [loading, setLoading] = useState(false);
-  const [agentWallet, setAgentWallet] = useState("");
-  const [dailyLimit, setDailyLimit] = useState("10");
 
-  // ------------------------
-  // Wallet connect
-  // ------------------------
-  async function connect() {
-    const { address } = await connectWallet();
-    setAddress(address);
-    await loadAgentWallet();
+  /* =====================
+     Wallet
+  ===================== */
+
+  async function connectWallet() {
+    try {
+      await ensureArcNetwork();
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      setAddress(await signer.getAddress());
+    } catch (err) {
+      alert("Wallet connection failed");
+    }
   }
 
-  // ------------------------
-  // Agent wallet helpers
-  // ------------------------
+  /* =====================
+     Agent
+  ===================== */
+
   async function loadAgentWallet() {
+    if (!address) return;
+
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
 
@@ -45,172 +79,338 @@ function App() {
 
     const agent = await manager.getMyAgent();
 
-    if (agent !== ethers.ZeroAddress) {
+    if (agent && agent !== ethers.ZeroAddress) {
       setAgentWallet(agent);
+      loadAgentBalance(agent);
     }
   }
 
-  async function createAgent() {
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer = await provider.getSigner();
-
-    const manager = new ethers.Contract(
-      AGENT_MANAGER_ADDRESS,
-      AGENT_MANAGER_ABI,
-      signer
-    );
-
-    const tx = await manager.createAgentWallet(
-      ethers.parseUnits(dailyLimit, 6)
-    );
-
-    await tx.wait();
-    await loadAgentWallet();
-  }
-
-  // ------------------------
-  // Main AI flow
-  // ------------------------
-  async function buyAndAnalyze() {
-    if (!query.trim()) {
-      alert("Enter a product description");
-      return;
-    }
-
+  async function createAgentWallet() {
     try {
       setLoading(true);
-      setAnalysis("");
+      setStep("Creating AI Agent...");
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
 
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-      const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
-
-      // 1. AI picks product
-      const pickRes = await fetch(BACKEND_URL + "/pick-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: query })
-      });
-
-      const pickData = await pickRes.json();
-
-      if (!pickRes.ok) {
-        throw new Error(pickData.error || "Product selection failed");
-      }
-
-      const productId = pickData.productId;
-
-      // 2. Price
-      const price = await contract.productPrices(productId);
-
-      // 3. Approve USDC
-      const allowance = await usdc.allowance(
-        await signer.getAddress(),
-        CONTRACT_ADDRESS
+      const manager = new ethers.Contract(
+        AGENT_MANAGER_ADDRESS,
+        AGENT_MANAGER_ABI,
+        signer
       );
 
-      if (allowance < price) {
-        const approveTx = await usdc.approve(CONTRACT_ADDRESS, price);
-        await approveTx.wait();
-      }
-
-      // 4. Pay
-      const receiptId = ethers.id(Date.now().toString());
-      const tx = await contract.payForProduct(productId, query, receiptId);
+      const limit = ethers.parseUnits(dailyLimit, 6);
+      const tx = await manager.createAgentWallet(limit);
       await tx.wait();
 
-      setTxHash(tx.hash);
-
-      // 5. Analyze
-      const res = await fetch(BACKEND_URL + "/ai-query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          txHash: tx.hash,
-          productId
-        })
-      });
-
-      const data = await res.json();
-      setAnalysis(data.analysis);
-
-    } catch (err) {
-      alert(err.message);
+      await loadAgentWallet();
+    } catch (e) {
+      alert(e.message);
     } finally {
       setLoading(false);
+      setStep("");
     }
   }
 
-  // ------------------------
-  // UI
-  // ------------------------
+  async function loadAgentBalance(agentAddr) {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
+    const bal = await usdc.balanceOf(agentAddr);
+    setAgentBalance(ethers.formatUnits(bal, 6));
+  }
+
+  async function fundAgent() {
+    try {
+      setLoading(true);
+      setStep("Funding agent wallet...");
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
+
+      const tx = await usdc.transfer(
+        agentWallet,
+        ethers.parseUnits(fundAmount, 6)
+      );
+      await tx.wait();
+
+      await loadAgentBalance(agentWallet);
+      setFundAmount("");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setLoading(false);
+      setStep("");
+    }
+  }
+
+  /* =====================
+     Product Search
+  ===================== */
+
+  async function handleSearchChange(e) {
+    const value = e.target.value;
+    setSearchText(value);
+
+    if (value.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const ids = await searchProducts(value);
+    setSuggestions(ids);
+  }
+
+  function selectProduct(id) {
+    setSelectedProductId(id);
+    setSearchText(PRODUCT_MAP[id]);
+    setSuggestions([]);
+  }
+
+  /* =====================
+     Buy & Analyze
+  ===================== */
+
+  async function buyAndAnalyze() {
+    if (!selectedProductId) return alert("Select a product");
+    if (!agentWallet) return alert("Create AI agent first");
+
+    try {
+      setLoading(true);
+      setAnalysis("");
+      setTxHash("");
+      setStep("AI agent paying on-chain...");
+
+      const res = await fetch(`${API_BASE}/ai-query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: selectedProductId,
+          task,
+          mode: task,
+          customQuery,
+          userAddress: address,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI failed");
+
+      setTxHash(data.txHash);
+      setAnalysis(
+        typeof data.analysis === "string"
+          ? data.analysis
+          : JSON.stringify(data.analysis, null, 2)
+      );
+
+      setStep("Done");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setStep(""), 1500);
+    }
+  }
+
+  useEffect(() => {
+    if (address) loadAgentWallet();
+  }, [address]);
+
+  /* =====================
+     UI
+  ===================== */
+
   return (
-    <div style={{ padding: 30, maxWidth: 600 }}>
-      <h2>Agentic Commerce AI</h2>
+    <>
+      {/* NAVBAR */}
+      <nav className="navbar">
+        <div className="logo">AgenticCommerce</div>
+        <div className="nav-links">
+          <a href="#features">Features</a>
+          <a href="#dashboard">Dashboard</a>
+          <a href="#security">Security</a>
+          <a href="#faq">FAQ</a>
+        </div>
 
-      {!address ? (
-        <button onClick={connect}>Connect Wallet</button>
-      ) : (
-        <p>Connected: {address}</p>
-      )}
-
-      <input
-        placeholder="Describe product (e.g. red lipstick, cheap perfume)"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{ width: "100%", marginTop: 10 }}
-      />
-
-      <hr />
-
-      <h3>AI Agent Wallet</h3>
-
-      {agentWallet ? (
-        <p>Agent Wallet: {agentWallet}</p>
-      ) : (
-        <>
-          <input
-            placeholder="Daily limit (USDC)"
-            value={dailyLimit}
-            onChange={(e) => setDailyLimit(e.target.value)}
-            style={{ width: "100%", marginBottom: 8 }}
-          />
-          <button onClick={createAgent}>
-            Create AI Agent Wallet
+        {!address ? (
+          <button className="btn-glow" onClick={connectWallet}>
+            Connect Wallet
           </button>
-        </>
-      )}
+        ) : (
+          <span>{shortAddr(address)}</span>
+        )}
+      </nav>
 
-      <button
-        onClick={buyAndAnalyze}
-        disabled={loading}
-        style={{ marginTop: 10 }}
-      >
-        {loading ? "Processing..." : "Buy & Analyze"}
-      </button>
+      {/* HERO */}
+      <section className="hero">
+        <div className="hero-text">
+          <h1>Autonomous AI Agents for On-Chain Commerce</h1>
+          <p>
+            Let AI analyze products, pay smart contracts, generate insights, and
+            make decisions — fully decentralized.
+          </p>
 
-      {txHash && (
-        <p>
-          Tx:{" "}
-          <a
-            href={`https://testnet.arcscan.app/tx/${txHash}`}
-            target="_blank"
-          >
-            View on ArcScan
-          </a>
-        </p>
-      )}
+          {!address ? (
+            <button className="btn-glow" onClick={connectWallet}>
+              Connect Wallet
+            </button>
+          ) : (
+            <button className="btn-glow">Connected</button>
+          )}
+        </div>
 
-      {analysis && (
-        <>
-          <h3>AI Result</h3>
-          <pre>{analysis}</pre>
-        </>
-      )}
-    </div>
+        <div className="hero-visual">
+          <div className="agent-orb">🤖</div>
+        </div>
+      </section>
+
+      {/* TRUST BAR */}
+      <div className="trust-bar">
+        Trusted by builders on
+        <div className="chains">
+          <span>ARC</span>
+          <span>ETH</span>
+          <span>Polygon</span>
+          <span>Base</span>
+        </div>
+      </div>
+
+      {/* FEATURES */}
+      <section id="features">
+        <h2 className="section-title">Why Agentic Commerce?</h2>
+        <div className="features-grid">
+          <div className="glass-card">
+            <h3>Autonomous Payments</h3>
+            <p>AI agents pay contracts without human approval.</p>
+          </div>
+          <div className="glass-card">
+            <h3>Product Intelligence</h3>
+            <p>Analyze profitability, sentiment, and demand instantly.</p>
+          </div>
+          <div className="glass-card">
+            <h3>On-chain Verification</h3>
+            <p>Every action verified by smart contracts.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* DASHBOARD */}
+      <section id="dashboard">
+        <h2 className="section-title">AI Agent Dashboard</h2>
+
+        <div className="dashboard-mock">
+          {/* AGENT WALLET */}
+          <div className="glass-card">
+            <h3>AI Agent Wallet</h3>
+
+            {!agentWallet && address && (
+              <>
+                <input
+                  placeholder="Daily limit (USDC)"
+                  value={dailyLimit}
+                  onChange={(e) => setDailyLimit(e.target.value)}
+                />
+                <br />
+                <br />
+                <button className="btn-glow" onClick={createAgentWallet}>
+                  Create AI Agent
+                </button>
+              </>
+            )}
+
+            {agentWallet && (
+              <>
+                <p>Status: 🟢 Active</p>
+                <p>Address: {shortAddr(agentWallet)}</p>
+                <p>Balance: {agentBalance} USDC</p>
+
+                <input
+                  placeholder="Fund amount"
+                  value={fundAmount}
+                  onChange={(e) => setFundAmount(e.target.value)}
+                />
+                <br />
+                <br />
+                <button className="btn-glow" onClick={fundAgent}>
+                  Fund Agent
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* AI ASSISTANT */}
+          <div className="glass-card" style={{ marginTop: 24 }}>
+            <h3>AI Assistant</h3>
+
+            <input
+              placeholder="Search product..."
+              value={searchText}
+              onChange={handleSearchChange}
+              style={{ width: "100%" }}
+            />
+
+            {suggestions.map((id) => (
+              <div
+                key={id}
+                className="table-row"
+                onClick={() => selectProduct(id)}
+              >
+                {PRODUCT_MAP[id]}
+              </div>
+            ))}
+
+            <select value={task} onChange={(e) => setTask(e.target.value)}>
+              <option>Analyze profitability</option>
+              <option>Analyze sentiment</option>
+              <option>Generate marketing ideas</option>
+              <option>Custom research</option>
+            </select>
+
+            {task === "Custom research" && (
+              <textarea
+                placeholder="Describe what you want AI to research..."
+                value={customQuery}
+                onChange={(e) => setCustomQuery(e.target.value)}
+              />
+            )}
+
+            <br />
+            <br />
+
+            <button
+              className="btn-glow"
+              onClick={buyAndAnalyze}
+              disabled={loading}
+            >
+              {loading ? "Working..." : "Run AI Agent"}
+            </button>
+
+            {step && <p>⏳ {step}</p>}
+
+            {txHash && (
+              <p>
+                Tx:{" "}
+                <a
+                  href={`https://testnet.arcscan.app/tx/${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View
+                </a>
+              </p>
+            )}
+
+            {analysis && <pre>{analysis}</pre>}
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <div className="footer">
+        <div className="footer-inner">
+          © 2026 Agentic Commerce · Built for ARC Hackathon
+        </div>
+      </div>
+    </>
   );
 }
-
-export default App;

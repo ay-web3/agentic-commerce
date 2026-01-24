@@ -9,38 +9,48 @@ interface IERC20 {
 
 contract AgenticCommerce {
 
-    // ---- Core ----
+    /* =====================
+        Core Config
+    ===================== */
+
     address public merchant;
     address public usdcToken;
     bool public paused;
 
     mapping(uint256 => uint256) public productPrices;
 
-    // ---- Replay protection ----
+    /* =====================
+        Replay Protection
+    ===================== */
+
     mapping(bytes32 => bool) public usedReceipts;
 
-    // ---- AI Agent System ----
-    mapping(address => bool) public approvedAgents;
-    mapping(address => uint256) public dailyLimit;
-    mapping(address => uint256) public spentToday;
-    mapping(address => uint256) public lastSpendDay;
-    
+    /* =====================
+        Subscriptions
+    ===================== */
 
-
-    // ---- Subscriptions ----
     mapping(address => uint256) public subscriptionExpiry;
 
-    // ---- Events ----
+    /* =====================
+        Events
+    ===================== */
+
     event ProductPaid(address indexed buyer, uint256 indexed productId, uint256 amount);
-    event AgentRegistered(address agent);
-    event AgentRevoked(address agent);
-    event AIPurchaseIntent(address agent, uint256 productId, string task);
-    event Refunded(address buyer, uint256 amount);
+    event Refunded(address indexed buyer, uint256 amount);
+    event Subscribed(address indexed user, uint256 expiry);
+
+    /* =====================
+        Constructor
+    ===================== */
 
     constructor(address _usdcToken) {
         merchant = msg.sender;
         usdcToken = _usdcToken;
     }
+
+    /* =====================
+        Modifiers
+    ===================== */
 
     modifier onlyMerchant() {
         require(msg.sender == merchant, "Not merchant");
@@ -52,17 +62,9 @@ contract AgenticCommerce {
         _;
     }
 
-    function setDailyLimit(address agent, uint256 amount) external onlyMerchant {
-    dailyLimit[agent] = amount;
-}
-
-function _currentDay() internal view returns (uint256) {
-    return block.timestamp / 1 days;
-}
-
-    // --------------------
-    // Admin
-    // --------------------
+    /* =====================
+        Admin
+    ===================== */
 
     function setProductPrice(uint256 productId, uint256 price) external onlyMerchant {
         productPrices[productId] = price;
@@ -76,37 +78,9 @@ function _currentDay() internal view returns (uint256) {
         paused = false;
     }
 
-    // --------------------
-    // AI Agent Management
-    // --------------------
-
-    function registerAgent(address agent, uint256 limitPerDay) external onlyMerchant {
-        approvedAgents[agent] = true;
-        dailyLimit[agent] = limitPerDay;
-        emit AgentRegistered(agent);
-    }
-
-    function revokeAgent(address agent) external onlyMerchant {
-        approvedAgents[agent] = false;
-        emit AgentRevoked(agent);
-    }
-
-    function _checkAgentLimit(address agent, uint256 amount) internal {
-        uint256 today = _currentDay();
-
-        if (lastSpendDay[agent] < today) {
-            spentToday[agent] = 0;
-            lastSpendDay[agent] = today;
-        }
-
-        require(spentToday[agent] + amount <= dailyLimit[agent], "AI daily limit exceeded");
-
-        spentToday[agent] += amount;
-    }
-
-    // --------------------
-    // Payments
-    // --------------------
+    /* =====================
+        Payments (x402)
+    ===================== */
 
     function payForProduct(
         uint256 productId,
@@ -120,41 +94,40 @@ function _currentDay() internal view returns (uint256) {
         uint256 price = productPrices[productId];
         require(price > 0, "Product not priced");
 
-        if (approvedAgents[msg.sender]) {
-            _checkAgentLimit(msg.sender, price);
-            emit AIPurchaseIntent(msg.sender, productId, task);
-        }
-
         IERC20(usdcToken).transferFrom(msg.sender, address(this), price);
 
         emit ProductPaid(msg.sender, productId, price);
     }
 
-    // --------------------
-    // Subscriptions
-    // --------------------
+    /* =====================
+        Subscriptions
+    ===================== */
 
     function subscribe(uint256 durationDays, uint256 amount) external notPaused {
         IERC20(usdcToken).transferFrom(msg.sender, address(this), amount);
-        subscriptionExpiry[msg.sender] = block.timestamp + (durationDays * 1 days);
+
+        uint256 expiry = block.timestamp + (durationDays * 1 days);
+        subscriptionExpiry[msg.sender] = expiry;
+
+        emit Subscribed(msg.sender, expiry);
     }
 
     function hasActiveSubscription(address user) external view returns (bool) {
         return subscriptionExpiry[user] > block.timestamp;
     }
 
-    // --------------------
-    // Refunds
-    // --------------------
+    /* =====================
+        Refunds
+    ===================== */
 
     function refund(address buyer, uint256 amount) external onlyMerchant {
         IERC20(usdcToken).transfer(buyer, amount);
         emit Refunded(buyer, amount);
     }
 
-    // --------------------
-    // Withdraw
-    // --------------------
+    /* =====================
+        Withdraw
+    ===================== */
 
     function withdraw() external onlyMerchant {
         uint256 balance = IERC20(usdcToken).balanceOf(address(this));
