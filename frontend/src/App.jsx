@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import "./trust.css";
+import CoinGeckoDashboard from "./CoinGeckoDashboard";
 
 import { searchProducts } from "./api/products";
 import { PRODUCT_MAP } from "./productMap";
 import { ensureArcNetwork } from "./network";
+import CryptoChart from "./components/CryptoChart";
 
 import {
   USDC_ADDRESS,
@@ -30,10 +32,11 @@ export default function App() {
   const [agentBalance, setAgentBalance] = useState("0");
   const [dailyLimit, setDailyLimit] = useState("10");
   const [fundAmount, setFundAmount] = useState("");
-
+  
   /* =====================
      Product + AI
   ===================== */
+  const [view, setView] = useState("commerce");
   const [searchText, setSearchText] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -225,11 +228,10 @@ export default function App() {
       {/* NAVBAR */}
       <nav className="navbar">
         <div className="logo">AgenticCommerce</div>
+
         <div className="nav-links">
-          <a href="#features">Features</a>
-          <a href="#dashboard">Dashboard</a>
-          <a href="#security">Security</a>
-          <a href="#faq">FAQ</a>
+          <a onClick={() => setView("commerce")}>Commerce AI</a>
+          <a onClick={() => setView("crypto")}>Crypto AI</a>
         </div>
 
         {!address ? (
@@ -250,13 +252,12 @@ export default function App() {
             make decisions — fully decentralized.
           </p>
 
-          {!address ? (
-            <button className="btn-glow" onClick={connectWallet}>
-              Connect Wallet
+          <div style={{ marginBottom: 16 }}>
+            <button onClick={() => setView("commerce")}>🛒 Commerce AI</button>
+            <button onClick={() => setView("crypto")} style={{ marginLeft: 10 }}>
+              📊 Crypto AI
             </button>
-          ) : (
-            <button className="btn-glow">Connected</button>
-          )}
+          </div>
         </div>
 
         <div className="hero-visual">
@@ -264,145 +265,109 @@ export default function App() {
         </div>
       </section>
 
-      {/* TRUST BAR */}
-      <div className="trust-bar">
-        Trusted by builders on
-        <div className="chains">
-          <span>ARC</span>
-          <span>ETH</span>
-          <span>Polygon</span>
-          <span>Base</span>
-        </div>
-      </div>
-
-      {/* FEATURES */}
-      <section id="features">
-        <h2 className="section-title">Why Agentic Commerce?</h2>
-        <div className="features-grid">
-          <div className="glass-card">
-            <h3>Autonomous Payments</h3>
-            <p>AI agents pay contracts without human approval.</p>
-          </div>
-          <div className="glass-card">
-            <h3>Product Intelligence</h3>
-            <p>Analyze profitability, sentiment, and demand instantly.</p>
-          </div>
-          <div className="glass-card">
-            <h3>On-chain Verification</h3>
-            <p>Every action verified by smart contracts.</p>
-          </div>
-        </div>
-      </section>
-
       {/* DASHBOARD */}
       <section id="dashboard">
-        <h2 className="section-title">AI Agent Dashboard</h2>
+        {view === "commerce" && (
+          <>
+            <h2 className="section-title">AI Agent Dashboard</h2>
 
-        <div className="dashboard-mock">
-          {/* AGENT WALLET */}
-          <div className="glass-card">
-            <h3>AI Agent Wallet</h3>
+            <div className="glass-card">
+              <h3>AI Agent Wallet</h3>
 
-            {!agentWallet && address && (
-              <>
-                <input
-                  placeholder="Daily limit (USDC)"
-                  value={dailyLimit}
-                  onChange={(e) => setDailyLimit(e.target.value)}
-                />
-                <br />
-                <br />
-                <button className="btn-glow" onClick={createAgentWallet}>
-                  Create AI Agent
-                </button>
-              </>
-            )}
+              {!agentWallet && address && (
+                <>
+                  <input
+                    placeholder="Daily limit (USDC)"
+                    value={dailyLimit}
+                    onChange={(e) => setDailyLimit(e.target.value)}
+                  />
+                  <br />
+                  <br />
+                  <button className="btn-glow" onClick={createAgentWallet}>
+                    Create AI Agent
+                  </button>
+                </>
+              )}
 
-            {agentWallet && (
-              <>
-                <p>Status: 🟢 Active</p>
-                <p>Address: {shortAddr(agentWallet)}</p>
-                <p>Balance: {agentBalance} USDC</p>
+              {agentWallet && (
+                <>
+                  <p>Status: 🟢 Active</p>
+                  <p>Address: {shortAddr(agentWallet)}</p>
+                  <p>Balance: {agentBalance} USDC</p>
 
-                <input
-                  placeholder="Fund amount"
-                  value={fundAmount}
-                  onChange={(e) => setFundAmount(e.target.value)}
-                />
-                <br />
-                <br />
-                <button className="btn-glow" onClick={fundAgent}>
-                  Fund Agent
-                </button>
-              </>
-            )}
-          </div>
+                  <input
+                    placeholder="Fund amount"
+                    value={fundAmount}
+                    onChange={(e) => setFundAmount(e.target.value)}
+                  />
+                  <br />
+                  <br />
+                  <button className="btn-glow" onClick={fundAgent}>
+                    Fund Agent
+                  </button>
+                </>
+              )}
+            </div>
 
-          {/* AI ASSISTANT */}
-          <div className="glass-card" style={{ marginTop: 24 }}>
-            <h3>AI Assistant</h3>
+            <div className="glass-card" style={{ marginTop: 24 }}>
+              <h3>AI Assistant</h3>
 
-            <input
-              placeholder="Search product..."
-              value={searchText}
-              onChange={handleSearchChange}
-              style={{ width: "100%" }}
-            />
-
-            {suggestions.map((id) => (
-              <div
-                key={id}
-                className="table-row"
-                onClick={() => selectProduct(id)}
-              >
-                {PRODUCT_MAP[id]}
-              </div>
-            ))}
-
-            <select value={task} onChange={(e) => setTask(e.target.value)}>
-              <option>Analyze profitability</option>
-              <option>Analyze sentiment</option>
-              <option>Generate marketing ideas</option>
-              <option>Custom research</option>
-            </select>
-
-            {task === "Custom research" && (
-              <textarea
-                placeholder="Describe what you want AI to research..."
-                value={customQuery}
-                onChange={(e) => setCustomQuery(e.target.value)}
+              <input
+                placeholder="Search product..."
+                value={searchText}
+                onChange={handleSearchChange}
+                style={{ width: "100%" }}
               />
-            )}
 
-            <br />
-            <br />
-
-            <button
-              className="btn-glow"
-              onClick={buyAndAnalyze}
-              disabled={loading}
-            >
-              {loading ? "Working..." : "Run AI Agent"}
-            </button>
-
-            {step && <p>⏳ {step}</p>}
-
-            {txHash && (
-              <p>
-                Tx:{" "}
-                <a
-                  href={`https://testnet.arcscan.app/tx/${txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
+              {suggestions.map((id) => (
+                <div
+                  key={id}
+                  className="table-row"
+                  onClick={() => selectProduct(id)}
                 >
-                  View
-                </a>
-              </p>
-            )}
+                  {PRODUCT_MAP[id]}
+                </div>
+              ))}
 
-            {analysis && <pre>{analysis}</pre>}
-          </div>
-        </div>
+              <select value={task} onChange={(e) => setTask(e.target.value)}>
+                <option>Analyze profitability</option>
+                <option>Analyze sentiment</option>
+                <option>Generate marketing ideas</option>
+                <option>Custom research</option>
+              </select>
+
+              {task === "Custom research" && (
+                <textarea
+                  placeholder="Describe what you want AI to research..."
+                  value={customQuery}
+                  onChange={(e) => setCustomQuery(e.target.value)}
+                />
+              )}
+
+              <br />
+              <br />
+
+              <button
+                className="btn-glow"
+                onClick={buyAndAnalyze}
+                disabled={loading}
+              >
+                {loading ? "Working..." : "Run AI Agent"}
+              </button>
+
+              {step && <p>⏳ {step}</p>}
+              {analysis && <pre>{analysis}</pre>}
+            </div>
+          </>
+        )}
+
+        {view === "crypto" && (
+          <>
+            <h2 className="section-title">Crypto AI Dashboard</h2>
+            <CryptoChart coin="bitcoin" />
+            <CoinGeckoDashboard userAddress={address} />
+          </>
+        )}
       </section>
 
       {/* FOOTER */}

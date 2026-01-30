@@ -4,3 +4,6 @@ secrets/
 .DS_Store
 out
 cachebroadcast/
+# Foundry
+broadcast/
+cache/

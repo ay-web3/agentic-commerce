@@ -669,3 +669,163 @@ section {
 .btn-glow:hover::after {
   transform: translateX(4px);
 }
+
+.crypto-dashboard {
+  margin-top: 40px;
+  background: #020617;
+  border-radius: 16px;
+  padding: 16px;
+  color: #e5e7eb;
+}
+
+.crypto-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.crypto-body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.crypto-left {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.crypto-search {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background: #020617;
+  border: 1px solid #1e293b;
+  color: white;
+}
+
+.crypto-search-results {
+  margin-top: 6px;
+}
+
+.crypto-search-item {
+  padding: 6px;
+  cursor: pointer;
+}
+
+.crypto-search-item:hover {
+  background: #0f172a;
+}
+
+.crypto-coin-list {
+  margin-top: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.crypto-coin-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.crypto-coin-row:hover {
+  background: #0f172a;
+}
+
+.crypto-coin-row.active {
+  background: #0f172a;
+  border: 1px solid #38bdf8;
+}
+
+.crypto-coin-name {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.crypto-right {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.crypto-selected-card {
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.crypto-selected-card .price {
+  font-size: 22px;
+  color: #22c55e;
+}
+
+.crypto-mode,
+.crypto-run-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: white;
+  border: 1px solid #1e293b;
+}
+
+.crypto-run-btn {
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+  border: none;
+  cursor: pointer;
+}
+
+.crypto-custom {
+  width: 100%;
+  height: 80px;
+  margin-top: 10px;
+  background: #020617;
+  color: white;
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid #1e293b;
+}
+
+.crypto-result {
+  margin-top: 16px;
+  background: #020617;
+  border: 1px solid #1e293b;
+  padding: 10px;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.crypto-portfolio {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.autocomplete-box {
+  position: absolute;
+  width: 100%;
+  background: #020617;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  z-index: 50;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.autocomplete-item {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.autocomplete-item:hover {
+  background: rgba(0, 240, 255, 0.1);
+}

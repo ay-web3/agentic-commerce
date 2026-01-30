@@ -19,12 +19,15 @@
   },
   "homepage": "https://github.com/ay-web3/agentic-commerce#readme",
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "chartjs-plugin-zoom": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "google-auth-library": "^10.5.0",
     "node-fetch": "^3.3.2",
+    "react-chartjs-2": "^5.3.1",
     "viem": "^2.44.4"
   }
 }

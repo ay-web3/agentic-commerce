@@ -8,11 +8,20 @@ import fetch from "node-fetch";
 import cors from "cors";
 import crypto from "crypto";
 import { GoogleAuth } from "google-auth-library";
+import { resolvePreset } from "./coin/cryptoPresets.js";
 import {
   indexProducts,
   findProductIdsFromText,
   findBestProductId
 } from "./productRegistry.js";
+import { getCoinPrice, searchCoin } from "./services/coingecko.js";
+import { loadMemeCoins } from "./coin/loadMemeCoins.js";
+import { setMemeCoins } from "./coin/presets.js";
+import { MEME_COINS } from "./coin/presets.js";
+import { getMultiCoinPricesLarge } from "./services/coingecko.js";
+import { getMarketChart } from "./services/cryptoChart.js";
+import { calculateSupportResistance, detectTrend } from "./services/technicalAnalysis.js";
+import { calculateEMA, calculateRSI } from "./services/indicators.js";
 
 const USDC_ADDRESS = process.env.USDC_ADDRESS;
 
@@ -220,6 +229,14 @@ async function callGemini(prompt) {
   return data.candidates[0].content.parts[0].text;
 }
 
+async function initMemeCoins() {
+  const coins = await loadMemeCoins(300);
+  setMemeCoins(coins);
+  console.log("✅ Loaded meme coins:", coins.length);
+}
+
+await initMemeCoins();
+
 /* =======================
    EXPRESS
 ======================= */
@@ -313,6 +330,19 @@ app.get("/search-product", (req, res) => {
   });
 });
 
+app.get("/prices/meme-coins", async (req, res) => {
+  try {
+    const data = await getMultiCoinPricesLarge(MEME_COINS);
+    res.json({
+      count: MEME_COINS.length,
+      data
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch meme coins" });
+  }
+});
+
+
 /* =======================
    PRODUCT PICKER
 ======================= */
@@ -325,6 +355,146 @@ app.post("/pick-product", (req, res) => {
 
   res.json({ productId });
 });
+
+app.post("/crypto/preset", async (req, res) => {
+  try {
+    const { preset, userCoins, limit } = req.body;
+
+    const result = await resolvePreset({
+      preset,
+      userCoins,
+      limit
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/crypto/chart/:coinId", async (req, res) => {
+  try {
+    const { coinId } = req.params;
+
+    const prices = await getMarketChart(coinId, 7);
+
+    const { support, resistance } = calculateSupportResistance(prices);
+    const trend = detectTrend(prices);
+
+    res.json({
+      coinId,
+      prices,
+      support,
+      resistance,
+      trend
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+import { getMarketCandles } from "./services/cryptoChart.js";
+
+function getTfConfig(tf) {
+  switch (tf) {
+    case "1h":
+      return {
+        interval: "1h",
+        limit: 400   // 👈 THIS FIXES THE SCANTY CHART
+      };
+
+    case "1d":
+      return {
+        interval: "1d",
+        limit: 180
+      };
+
+    case "7d":
+      return {
+        interval: "1d",
+        limit: 110
+      };
+
+    default:
+      return {
+        interval: "1h",
+        limit: 100
+      };
+  }
+}
+
+app.get("/crypto/chart", async (req, res) => {
+  try {
+    const coin = req.query.coin || "bitcoin";
+    const tf = req.query.tf || "1h";
+
+    const { limit } = getTfConfig(tf);
+
+    // Fetch raw candles
+    const rawCandles = await getMarketCandles(coin, tf);
+
+    if (!Array.isArray(rawCandles) || rawCandles.length === 0) {
+      return res.status(400).json({ error: "No candle data" });
+    }
+
+    // 🔑 Keep only the most recent candles for this timeframe
+    const candles = rawCandles.slice(-limit);
+
+    const closes = candles.map(c => c.c);
+
+    const ema20 = calculateEMA(closes, 20);
+    const ema50 = calculateEMA(closes, 50);
+    const rsi = calculateRSI(closes, 14);
+
+    return res.json({
+      candles,
+      ema20,
+      ema50,
+      rsi
+    });
+  } catch (err) {
+    console.error("Crypto chart error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+app.get("/crypto/search", async (req, res) => {
+  try {
+    const q = (req.query.q || "").toLowerCase();
+    const preset = req.query.preset || "coins";
+
+    if (!q) return res.json({ coins: [] });
+
+    let coins = [];
+
+    if (preset === "coins") {
+      coins = await getTopCoins(22);
+    } 
+    else if (preset === "meme_coins") {
+      coins = MEME_COINS;
+    } 
+    else {
+      // user_custom → all coins
+      coins = await searchCoin(q); // existing CoinGecko search
+    }
+
+    const filtered = coins
+      .filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.symbol.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+
+    res.json({ coins: filtered });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 /* =======================
@@ -433,6 +603,82 @@ ${JSON.stringify(product, null, 2)}
 });
 
 
+app.get("/price/:coin", async (req, res) => {  
+  try {  
+    const coinId = req.params.coin.toLowerCase();  
+    const price = await getCoinPrice(coinId);  
+  
+    res.json({  
+      coin: coinId,  
+      usd: price  
+    });  
+  } catch (err) {  
+    res.status(400).json({ error: err.message });  
+  }  
+});  
+
+app.post("/ai/crypto-analyze", async (req, res) => {
+  try {
+    const { userAddress, coinId, mode, preset, portfolio, customQuery } = req.body;
+
+    if (!userAddress) {
+      return res.status(400).json({ error: "Missing userAddress" });
+    }
+
+    if (!coinId && mode !== "portfolio") {
+      return res.status(400).json({ error: "coinId required" });
+    }
+
+    // 1️⃣ Charge user via x402
+    const PRODUCT_ID = 3; // virtual product id for crypto AI
+
+    const txHash = await agentPayForAccess(
+      userAddress,
+      PRODUCT_ID,
+      `crypto:${mode}`,
+      PRODUCT_PRICE
+    );
+
+    // 2️⃣ Verify payment
+    const isValid = await verifyContractPayment(txHash, PRODUCT_ID, PRODUCT_PRICE);
+    if (!isValid) {
+      return res.status(402).json({ error: "Payment failed" });
+    }
+
+    // 3️⃣ Build crypto data
+    let context = "";
+
+    if (mode === "portfolio") {
+      context = `Portfolio coins: ${portfolio.join(", ")}`;
+    } else {
+      const price = await getCoinPrice(coinId);
+      context = `Coin: ${coinId}, Current price: $${price}`;
+    }
+
+    const prompt = `
+You are a professional crypto analyst.
+
+Mode: ${mode}
+
+${context}
+
+${customQuery ? "User request: " + customQuery : ""}
+
+Be concise and actionable.
+`;
+
+    // 4️⃣ AI
+    const analysis = await callGemini(prompt);
+
+    res.json({
+      txHash,
+      analysis
+    });
+  } catch (err) {
+    console.error("Crypto AI error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /* =======================
    EXTRA AI ENDPOINTS 
